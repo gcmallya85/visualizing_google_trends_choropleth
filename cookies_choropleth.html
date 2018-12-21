@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script src="http://d3js.org/d3.v3.min.js"></script>
+<style type="text/css">
+
+/* When mouse hovers over state, change fill opacity*/
+path:hover {
+	fill-opacity: .75;
+}
+
+/* Tooltip */
+div.tooltip {   
+ 	position: absolute;           
+	text-align: center;           
+	padding: 2px;             
+	font: 12px arial;        
+	background: white;   
+	border: 0px;      
+	border-radius: 8px;           
+	pointer-events: none;
+	z-index: 1000;
+}
+        
+/* Legend Font*/
+body {
+	font: 11px arial;
+}
+        
+/* Legend Style */
+.legend {
+	position:absolute;
+	left:700px;
+	top:350px;
+}
+
+</style>
+</head>
+<body>
+<h1>Top cookie queries by state (source Google Trends)</h1>
+<div id="draw_area"></div>
+<p>This is purely a data visualization exercise, I am not trying to make a statement for/against any cookies. <span style="color:blue">Popular search queries are displayed when the user clicks on any state.</span> When available, TOP queries according to Google Trends from 2004 - present were considered in this study. Search queries that I thought were not directly related to cookies were filtered out. For example, a <span style="color:red">query called <em>cookie recipe</em> was excluded</span>. The numbers alongside the queries indicate its popularity, and ranges from 100 to 0. For example, the most popular search query gets a score of 100. Similarly, a query which is half as popular gets a score of 50, and so on. </p>
+<script type="text/javascript">
+
+//Define a width and height of the map
+var width = document.getElementById('draw_area').offsetWidth;
+var height = 600;
+
+// Define D3 Projection
+var projection = d3.geo.albersUsa()
+				   .translate([width/2, height/2])
+				   .scale([1000]); // To properly scale the map
+        
+// Define path generator
+var path = d3.geo.path() // Convert JSON to SVG paths
+		  	 .projection(projection);  // Draw path according to albersUsa projection
+
+		
+// Define linear scale for output
+var color = d3.scale.linear()
+			  .range(["rgb(248,223,79)","rgb(163,94,96)","rgb(232,210,185)","rgb(84,31,18)","rgb(204,139,60)"]);
+			  //.range(["rgb(166,97,26)","rgb(223,194,125)","rgb(245,245,245)","rgb(128,205,193)","rgb(1,133,113)"]);
+
+var leg_text = ["butter cookies", "chip cookies", "sugar cookies", "chocolate cookies", "chocolate chip cookies"];
+
+// Create SVG element
+var svg = d3.select("body").select("#draw_area")
+			.append("svg")
+			.attr("width", width)
+			.attr("height", height);
+        
+// Append Div as a tooltip, will show top queries
+var div = d3.select("body")
+		    .append("div")   
+    		.attr("class", "tooltip")               
+    		.style("opacity", 0);
+
+
+var rows; // Global variable to be passed to draw_choropleth
+d3.csv("top_queries_full.csv", function(loadedRows) {
+	rows = loadedRows;
+	draw_choropleth();
+	});
+	
+function draw_choropleth(){
+	//console.log(rows);
+	// Load file containing top queries
+	d3.csv("top_query.csv", function(data) {
+		color.domain([0,1,2,3,4]); // set the domain of input data (query-class, similar to leg_text)
+
+		// Load geographic JSON data and merge with query data
+		d3.json("us-states.json", function(json_data) {
+
+		// Loop through each row in top_query.csv
+		for (var i = 0; i < data.length; i++) {
+
+			// Fetch State from the currently read row
+			var query_State = data[i].State;
+
+			// Fetch query-class from the currently read row
+			var query_Class = data[i].Class;
+
+			// Find the corresponding state inside the loaded JSON file
+			for (var j = 0; j < json_data.features.length; j++)  {
+				var state_json = json_data.features[j].properties.name;
+
+				if (query_State == state_json) {
+
+				// Add the query-class to json_data
+				json_data.features[j].properties.Class = query_Class; 
+				break; // Ends for-loop when a match is found
+				}
+			}
+		}
+		//console.log(json_data.features);
+		// Draw one path for every feature in json_data
+		svg.selectAll("path")
+			.data(json_data.features)
+			.enter()
+			.append("path")
+			.attr("d", path)
+			.style("stroke", "#DAECED")
+			.style("stroke-width", "1")
+			.style("fill", function(d) {
+
+				// Get query-class associated with each state in json_data
+				var q_class = d.properties.Class;
+
+				if (q_class) {
+					return color(q_class);
+				} else {
+					// If q_class is missing for a state 
+					return "rgb(211,211,211)";
+				}
+			})
+			.on("click", function(d) {
+				//console.log(d)			;
+				div.transition()        
+				   .duration(200)     
+				   .style("opacity", 1)
+				   .style("background-color","#C4CFD0");
+				filtered_rows = rows.filter(function(rd){return rd.StateID==+d.id;});
+				//console.log(filtered_rows);
+				var tx = '<strong>'+d.properties.name+'</strong><br/>';
+				filtered_rows.forEach(function(fr){tx = tx + fr["Query"] + ',' + fr["Prct"] +'<br/>' })
+				div.html(tx)
+					.style("left", (d3.event.pageX) + "px")     
+				   .style("top", (d3.event.pageY - 28) + "px");  
+			})
+			// define how the tool tip fades when mouse moves out of the boundary/path of any state
+			.on("mouseout", function(d) {       
+				div.transition()        
+				   .duration(500)      
+				   .style("opacity", 0);   
+			});
+
+				 
+					
+		var legendHolder = d3.select("svg").append("g").attr('transform', "translate(" + (width-0.2*width) + ","+(height-0.3*height)+")");
+		var legend = legendHolder.selectAll(".legend")
+						.data(color.domain().slice())
+						.enter()
+						.append("g")
+						.attr("transform", function(d, i) { return "translate(0," + i * 20 + ")"; });
+
+		legend.append("rect")
+			  .attr("width", 20)
+			  .attr("height", 20)
+			  .style("fill", color);
+
+		legend.append("text")
+			  .data(leg_text)
+			  .attr("x", 25)
+			  .attr("y", 10)
+			  .attr("dy", ".4em")
+			  .text(function(d) { return d; });
+		});
+
+	}); //d3.csv for loading top_query.csv and plotting ends here
+}// function draw_choropleth ends here
+
+</script>
+</body>
+</html>
